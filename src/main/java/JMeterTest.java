@@ -4,7 +4,7 @@ import tech.logres.tinymq.endpoint.EndPoint;
 import java.util.ArrayList;
 import java.util.List;
 
-public class Recv {
+public class JMeterTest {           //该入口用于对JMeter并发测试设置队列及键值
     static String IP = "localhost";
     static int port = 8888;
 
@@ -19,10 +19,5 @@ public class Recv {
         List<String> keys = new ArrayList<>();
         keys.add("Hello");
         endPoint.addKey("newQueue", keys);
-        while(true){
-            endPoint.subscribe("newQueue", new EndHandler("subscribe", endPoint));
-            Thread.sleep(1000);
-        }
-
     }
 }

@@ -1,8 +1,12 @@
 package tech.logres.tinymq;
 
+import tech.logres.tinymq.config.GlobalConfig;
+
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -11,36 +15,44 @@ public class ConnectHandler implements Runnable {
     Socket client;
     Broker caller;
 
+    Map<String,String> messageMap = new ConcurrentHashMap<>();
+    List<String> keyList = new ArrayList<>();
+
     public ConnectHandler(Socket client,Broker caller){
         this.client = client;
         this.caller = caller;
     }
 
-    public Map<String,String> messageDealer(String origin){
-        String[] firstStage = origin.split("::",3);
-        Map<String,String> res = new ConcurrentHashMap<>();
-        res.put("Action",firstStage[0]);
+    private void messageDealer(String origin){      //主协议解析
+        String[] firstStage = origin.split("::",4);
+        messageMap.put("Action",firstStage[0]);
         switch (firstStage[0]){
             case "Declare":
-                res.put("Topic",firstStage[1]);
+                messageMap.put("Func",firstStage[1]);
+                messageMap.put("QueueName",firstStage[2]);
+                keyDealer(firstStage[3]);
                 break;
             case "Publish":
-                res.put("Topic",firstStage[1]);
-                res.put("Message",firstStage[2]);
+                messageMap.put("Key",firstStage[1]);
+                messageMap.put("Message",firstStage[2]);
                 break;
             case "Subscribe":
-                res.put("UserName",firstStage[2]);
-                res.put("Topic",firstStage[1]);
-                break;
-            case "Get":
-                res.put("UserName",firstStage[1]);
+                messageMap.put("QueueName",firstStage[1]);
                 break;
             default:
-                return null;
         }
 
-        return res;
     }
+
+    private void keyDealer(String origin){      //键值解析
+        if(origin.compareTo("NULL") != 0){
+            String[] keys = origin.split(":");
+            for(int i = 0; i < keys.length; i++){
+                keyList.add(keys[i]);
+            }
+        }
+    }
+
 
     @Override
     public void run() {
@@ -50,33 +62,28 @@ public class ConnectHandler implements Runnable {
             var reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
             String message = reader.readLine();
 
-            System.out.println("START"+message+"END"+"\n");
+            if(GlobalConfig.LOG) System.out.println("START >> "+message+" >> END"+"\n");    //输出消息信息
 
-            Map<String,String> messageMap = messageDealer(message.toString());
+            messageDealer(message.toString());      //解析
 
-            String res;
-            switch (messageMap.get("Action")){
+            String res = "";
+            switch (messageMap.get("Action")){      //调用
                 case "Declare":
-                    if(caller.declare(messageMap.get("Topic"))==0)
-                        res = "ACK";
-                    else
-                        res = "Error";
+                    caller.declare(messageMap.get("Func"), messageMap.get("QueueName"), keyList);
+                    res = "ACK";
                     break;
+
                 case "Publish":
-                    if(caller.publish(messageMap.get("Topic"),messageMap.get("Message"))==0)
+                    if(caller.publish(messageMap.get("Key"),messageMap.get("Message")))
                         res = "ACK";
                     else
                         res = "ERROR";
                     break;
+
                 case "Subscribe":
-                    if(caller.subscribe(messageMap.get("UserName"),messageMap.get("Topic"))==0)
-                        res = "ACK";
-                    else
-                        res = "ERROR";
+                    res = caller.subscribe(messageMap.get("QueueName"));
                     break;
-                case "Get":
-                    res = caller.get(messageMap.get("UserName"));
-                    break;
+
                 default:
                     res = "ERROR";
             }
@@ -84,8 +91,11 @@ public class ConnectHandler implements Runnable {
             var writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
             writer.write(res+"\r\n");
             writer.flush();
+
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        try{client.close();}catch (Exception e){e.printStackTrace();}
     }
 }

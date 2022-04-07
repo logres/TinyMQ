@@ -11,11 +11,10 @@ public class Send {
          * 3. 发送消息
          */
         EndPoint endPoint = new EndPoint(IP,port);
-        endPoint.topicDeclare(Topic);
         while(true){
             System.out.println("Send");
-            System.out.println(endPoint.publish("hello","Hello World"));
-            Thread.sleep(5000);
+            endPoint.publish("Hello", "Hello world.");
+            Thread.sleep(1000);
         }
 
     }

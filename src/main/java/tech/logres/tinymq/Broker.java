@@ -3,12 +3,15 @@ package tech.logres.tinymq;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import tech.logres.tinymq.config.BrokerConfig;
+import tech.logres.tinymq.config.GlobalConfig;
+
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.*;
 
 /**
  * Broker 负责topic与queue
@@ -18,21 +21,36 @@ public class Broker {
     @Autowired
     BrokerConfig brokerConfig;
 
-    //消息队列 按照Topic-队列 进行存储
-    Map<String, Queue<String>> message = new ConcurrentHashMap<>();
+    Map<String, List<String>> keyToName = new ConcurrentHashMap<>();                //键值对应的队列名列表
+    Map<String, BlockingQueue<String>> nameToQueue = new ConcurrentHashMap<>();     //队列名对应的队列
 
-    //订阅表，按照Subscriber-Topic进行存储
-    Map<String, Queue<String>> subscribes = new ConcurrentHashMap<>();
 
+    /**
+     * 单个Broker结点运行
+     */
     public void start(){
         System.out.println(brokerConfig==null);
 
         try {
             ServerSocket server = new ServerSocket( 8888);
             System.out.println("Waiting for connect");
+
+            ExecutorService executor;
+            switch (GlobalConfig.THREAD_MODE){  //选择线程池模式
+                case "FIX":
+                    executor = Executors.newFixedThreadPool(GlobalConfig.THREAD_NUM);
+                    break;
+                case "CACHED":
+                    executor = Executors.newCachedThreadPool();
+                    break;
+                default:
+                    return;
+            }
+
             while(true){
                 Socket client = server.accept();
-                new Thread(new ConnectHandler(client,this)).start();
+                //new Thread(new ConnectHandler(client,this)).start();
+                executor.execute(new ConnectHandler(client,this));     //子线程，获取消息，调用处理方法
             }
 
         }catch (Exception ex){
@@ -40,64 +58,76 @@ public class Broker {
         }
     }
 
-    /**
-     * 处理订阅事务
-     * @param subscriber
-     * @param topic
-     */
-    public int subscribe(String subscriber,String topic){
-        //新用户，增加id
-        if(!this.subscribes.containsKey(subscriber)) {
-            this.subscribes.put(subscriber, new ConcurrentLinkedQueue<>());
-        }
-        //非重复订阅
-        if(!this.subscribes.get(subscriber).contains(topic)){
-            this.subscribes.get(subscriber).add(topic);
-            return 0;
-        }
-        return 1;
 
-    }
+    public void declare(String func, String queueName, List<String> keyList){   //声明处理
 
-    /**
-     * 处理发布事务
-     * @param topic
-     * @param message
-     */
-    public int publish(String topic,String message){
-        if(this.message.containsKey(topic)){
-            this.message.get(topic).add(message);
-            return 0;
-        }else {
-            return 1;
-        }
-    }
-
-    /**
-     * 处理声明事务
-     */
-    public int declare(String topic){
-        if(!this.message.containsKey(topic)){
-            this.message.put(topic,new ConcurrentLinkedQueue<>());
-            return 0;
-        }
-        return 1;
-    }
-
-    /**
-     * 处理拉取业务
-     * @param subscriber
-     * @return
-     */
-    public String get(String subscriber){
-        String result="";
-        Queue<String> topicSet=this.subscribes.get(subscriber);
-        for (String s : topicSet){
-            if(!this.message.get(s).isEmpty()){
-                result = this.message.get(s).poll();
+        switch (func){
+            case "ADD":     //添加队列键值
+            case "OPEN":    //新建队列
+                if(!nameToQueue.containsKey(queueName)){
+                nameToQueue.put(queueName, new LinkedBlockingQueue<>());
+                }
+                for (int i = 0; i < keyList.size(); i++){
+                    String key = keyList.get(i);
+                    if(!keyToName.containsKey(key)){
+                        keyToName.put(key, new ArrayList<>());
+                    }
+                    keyToName.get(key).add(queueName);
+                }
                 break;
+
+            case "DELETE":     //删除队列键值
+                for (String key : keyToName.keySet()){
+                    List<String> list = keyToName.get(key);
+                    if(list.contains(queueName)){
+                        list.remove(queueName);
+                        if (list.size() == 0){
+                            keyToName.remove(key);
+                        }
+                    }
+                }
+                break;
+
+            case "CLOSE":  //删除队列
+                for (String key : keyToName.keySet()){
+                    List<String> list = keyToName.get(key);
+                    if(list.contains(queueName)){
+                        list.remove(queueName);
+                        if (list.size() == 0){
+                            keyToName.remove(key);
+                        }
+                    }
+                }
+                nameToQueue.remove(queueName);
+                break;
+        }
+    }
+
+    public boolean publish(String key,String message){   //发布处理
+
+        List<String> nameList = keyToName.get(key);
+        if (nameList == null) return false;
+        for(String name : nameList){
+            BlockingQueue<String> queue = nameToQueue.get(name);
+            try {
+                queue.put(message);
+            }catch (Exception e) {
+                e.printStackTrace();
+                return false;
             }
         }
-        return result;
+        return true;
     }
+
+    public String subscribe(String queueName){   //订阅处理
+        try {
+            BlockingQueue<String> queue = nameToQueue.get(queueName);
+            if(queue != null) return queue.take();
+            else return "ERROR";
+        }catch (Exception e) {
+            e.printStackTrace();
+            return "ERROR";
+        }
+    }
+
 }
