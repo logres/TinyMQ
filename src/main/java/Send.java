@@ -3,7 +3,6 @@ import tech.logres.tinymq.endpoint.EndPoint;
 public class Send {
     static String IP = "localhost";
     static int port = 8888;
-    private final static String Topic = "hello";
     public static void main(String[] argv) throws Exception {
         /**
          * 1. 工厂方法、设置IP

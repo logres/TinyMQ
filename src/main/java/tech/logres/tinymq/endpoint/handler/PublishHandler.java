@@ -2,6 +2,7 @@ package tech.logres.tinymq.endpoint.handler;
 
 import tech.logres.tinymq.config.GlobalConfig;
 import tech.logres.tinymq.endpoint.EndPoint;
+import tech.logres.tinymq.endpoint.Message;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -21,30 +22,29 @@ public class PublishHandler implements Runnable{  //订阅线程类
     @Override
     public void run() {
         while (true){
-            while (!endPoint.key.isEmpty()){
+            if (!endPoint.messageToPublish.isEmpty()){
 
-                String key = endPoint.key.poll();
-                String message = endPoint.message.poll();
-
+                Message key_message = endPoint.messageToPublish.poll();
+                String key = key_message.getKey();
+                String message = key_message.getMessage();
                 String flag = "ERROR";
                 int times = 0;
-                while (flag.compareTo("ERROR") == 0 && times < GlobalConfig.CONNECT_TIMES){
+                if (flag.equals("ERROR") && times < GlobalConfig.CONNECT_TIMES){
 
-                    try (Socket sock = new Socket(endPoint.IP,endPoint.port);){
+                    try (Socket sock = new Socket(endPoint.IP,endPoint.port)){
 
-                        OutputStream output = sock.getOutputStream();
-                        var writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
                         StringBuilder mes = new StringBuilder();
 
                         mes.append("Publish").append("::").append(key).append("::").append(message).append("\r\n");
 
-                        flag = endPoint.getString(sock, writer, mes);
+                        flag = endPoint.sendAndGet(sock, mes);
+
                     } catch (IOException e) {
                         e.printStackTrace();
-
                         times++;
                         try{Thread.sleep(100);} catch (InterruptedException e1) {e1.printStackTrace();}
                     }
+
                 }
                 if(times == GlobalConfig.CONNECT_TIMES){
                     System.out.println("Fail to publish.\n");   //重连失败提示
