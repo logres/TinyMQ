@@ -1,4 +1,3 @@
-import tech.logres.tinymq.endpoint.EndHandler;
 import tech.logres.tinymq.endpoint.EndPoint;
 
 import java.util.ArrayList;

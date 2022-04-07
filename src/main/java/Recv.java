@@ -1,5 +1,5 @@
-import tech.logres.tinymq.endpoint.EndHandler;
 import tech.logres.tinymq.endpoint.EndPoint;
+import tech.logres.tinymq.endpoint.handler.CallBackHandler;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,10 +19,24 @@ public class Recv {
         List<String> keys = new ArrayList<>();
         keys.add("Hello");
         endPoint.addKey("newQueue", keys);
-        while(true){
-            endPoint.subscribe("newQueue", new EndHandler("subscribe", endPoint));
-            Thread.sleep(1000);
-        }
 
+        test(1, endPoint);
     }
+
+    private static void test(int mode, EndPoint endPoint){
+        switch (mode){
+            case 1:
+                endPoint.subscribe("newQueue", new CallBackHandler());
+                try {Thread.sleep(5000);} catch (InterruptedException e) {e.printStackTrace();}
+                endPoint.unSubscribe("newQueue");
+                break;
+
+            case 2:
+                while(true){
+                    System.out.println(endPoint.get("newQueue"));
+                    try {Thread.sleep(1000);} catch (InterruptedException e) {e.printStackTrace();}
+                }
+        }
+    }
+
 }

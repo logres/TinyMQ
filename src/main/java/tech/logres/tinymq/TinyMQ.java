@@ -1,8 +1,6 @@
 package tech.logres.tinymq;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import tech.logres.tinymq.config.NameServerConfig;
 
 /**
  * TinyMQ class enable a cluster of broker, and at least one broker is started here.
@@ -11,9 +9,6 @@ import tech.logres.tinymq.config.NameServerConfig;
  */
 @Component
 public class TinyMQ {
-
-    @Autowired
-    NameServerConfig nameServerConfig;
 
     public void start(){
         new Broker().start();

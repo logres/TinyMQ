@@ -36,6 +36,7 @@ public class ConnectHandler implements Runnable {
                 messageMap.put("Key",firstStage[1]);
                 messageMap.put("Message",firstStage[2]);
                 break;
+            case "Get":
             case "Subscribe":
                 messageMap.put("QueueName",firstStage[1]);
                 break;
@@ -56,46 +57,52 @@ public class ConnectHandler implements Runnable {
 
     @Override
     public void run() {
-        try{
-            //同步io读取message
-            InputStream input = this.client.getInputStream();
-            var reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
-            String message = reader.readLine();
+        while (!client.isClosed()){
+            try{
+                //同步io读取message
+                InputStream input = this.client.getInputStream();
+                var reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
+                String message = reader.readLine();
 
-            if(GlobalConfig.LOG) System.out.println("START >> "+message+" >> END"+"\n");    //输出消息信息
+                if(GlobalConfig.LOG) System.out.println("START >> "+message+" >> END"+"\n");    //输出消息信息
 
-            messageDealer(message.toString());      //解析
+                messageDealer(message.toString());      //解析
 
-            String res = "";
-            switch (messageMap.get("Action")){      //调用
-                case "Declare":
-                    caller.declare(messageMap.get("Func"), messageMap.get("QueueName"), keyList);
-                    res = "ACK";
-                    break;
-
-                case "Publish":
-                    if(caller.publish(messageMap.get("Key"),messageMap.get("Message")))
+                String res = "";
+                switch (messageMap.get("Action")){      //调用
+                    case "Declare":
+                        caller.declare(messageMap.get("Func"), messageMap.get("QueueName"), keyList);
                         res = "ACK";
-                    else
+                        break;
+
+                    case "Publish":
+                        if(caller.publish(messageMap.get("Key"),messageMap.get("Message")))
+                            res = "ACK";
+                        else
+                            res = "ERROR";
+                        break;
+
+                    case "Get":
+                    case "Subscribe":
+                        res = caller.getMessage(messageMap.get("QueueName"));
+                        break;
+
+                    default:
                         res = "ERROR";
-                    break;
+                }
+                OutputStream output = this.client.getOutputStream();
+                var writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
+                writer.write(res+"\r\n");
+                writer.flush();
 
-                case "Subscribe":
-                    res = caller.subscribe(messageMap.get("QueueName"));
-                    break;
-
-                default:
-                    res = "ERROR";
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-            OutputStream output = this.client.getOutputStream();
-            var writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
-            writer.write(res+"\r\n");
-            writer.flush();
-
-        } catch (IOException e) {
-            e.printStackTrace();
+            try{
+                if(messageMap.get("Action").compareTo("Subscribe") != 0){   //subscribe下线程不终止
+                    client.close();
+                }
+            }catch (Exception e){e.printStackTrace();}
         }
-
-        try{client.close();}catch (Exception e){e.printStackTrace();}
     }
 }

@@ -1,8 +1,6 @@
 package tech.logres.tinymq;
 
 
-import org.springframework.beans.factory.annotation.Autowired;
-import tech.logres.tinymq.config.BrokerConfig;
 import tech.logres.tinymq.config.GlobalConfig;
 
 import java.net.ServerSocket;
@@ -10,7 +8,6 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.*;
 
 /**
@@ -18,18 +15,10 @@ import java.util.concurrent.*;
  */
 public class Broker {
 
-    @Autowired
-    BrokerConfig brokerConfig;
-
     Map<String, List<String>> keyToName = new ConcurrentHashMap<>();                //键值对应的队列名列表
     Map<String, BlockingQueue<String>> nameToQueue = new ConcurrentHashMap<>();     //队列名对应的队列
 
-
-    /**
-     * 单个Broker结点运行
-     */
     public void start(){
-        System.out.println(brokerConfig==null);
 
         try {
             ServerSocket server = new ServerSocket( 8888);
@@ -119,7 +108,7 @@ public class Broker {
         return true;
     }
 
-    public String subscribe(String queueName){   //订阅处理
+    public String getMessage(String queueName){   //获取消息(get/subscribe)
         try {
             BlockingQueue<String> queue = nameToQueue.get(queueName);
             if(queue != null) return queue.take();

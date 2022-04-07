@@ -1,45 +1,41 @@
 package tech.logres.tinymq.endpoint;
+
+import io.netty.util.internal.PriorityQueue;
+import org.apache.ibatis.jdbc.Null;
+import tech.logres.tinymq.endpoint.handler.CallBackHandlerInterface;
+import tech.logres.tinymq.endpoint.handler.PublishHandler;
+import tech.logres.tinymq.endpoint.handler.SubscribeHandler;
+
 import java.io.*;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-/**
- * 客户端类，用于在客户端进行消息的收发，与服务端共同完成MQ任务
- */
-public class EndPoint {
+public class EndPoint { //客户端
 
-    protected Queue<String> key = new ConcurrentLinkedQueue<>();    //异步发布队列
-    protected Queue<String> message = new ConcurrentLinkedQueue<>();
+    public Queue<String> key = new ConcurrentLinkedQueue<>();           //异步发布队列
+    public Queue<String> message = new ConcurrentLinkedQueue<>();
 
-    String IP;
-    int port;
+    private Map<String, Thread> subscribed = new LinkedHashMap<>();     //订阅线程组
 
-    /**
-     * 给定服务端地址，建立连接
-     * @param IP IP
-     * @param port 端口号
-     */
+    Thread handler = new Thread(new PublishHandler( this));     //发布维护线程
+
+    public String IP;
+    public int port;
+
     public EndPoint(String IP, int port){
         this.IP=IP;
         this.port=port;
 
         //启动相关维护线程
-        new Thread(new EndHandler("publish", this)).start();
+        handler.start();
     }
 
-    /**
-     * 给定套接字，输入接口与消息，等待回复
-     * @param sock
-     * @param message
-     * @return
-     * @throws IOException
-     */
-    protected String getString(Socket sock, StringBuilder message) throws IOException {
-        OutputStream output = sock.getOutputStream();
-        var writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
+    public String getString(Socket sock, BufferedWriter writer, StringBuilder message) throws IOException {
         writer.write(String.valueOf(message));
         writer.flush();
 
@@ -50,47 +46,58 @@ public class EndPoint {
         return String.valueOf(res);
     }
 
-    /**
-     * 发布消息
-     * @param key 路由键值
-     * @param message 消息体
-     */
     public void publish(String key, String message){     //消息发布
         this.key.offer(key);
         this.message.offer(message);
     }
 
-    /**
-     * 订阅消息，给定订阅的消息队列，以及回调函数
-     * @param queueName
-     * @param handler
-     */
-    public void subscribe(String queueName, CallBackHandler handler){     //消息订阅
+    public void subscribe(String queueName, CallBackHandlerInterface handler){     //消息订阅
+        Thread thread = new Thread(new SubscribeHandler(this, queueName, handler));
+        if(!subscribed.containsKey(queueName)){
+            subscribed.put(queueName, thread);
+            thread.start();
+        }
+    }
+
+    public void unSubscribe(String queueName){     //取消订阅
+        Thread thread = subscribed.get(queueName);
+        if (thread != null) {
+            thread.interrupt();
+            subscribed.remove(queueName);
+        }
+    }
+
+    public String get(String queueName) {     //消息获取
         try (Socket sock = new Socket(this.IP,this.port);){
 
-
+            OutputStream output = sock.getOutputStream();
+            var writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
             StringBuilder message = new StringBuilder();
-            message.append("Subscribe").append("::").append(queueName).append("\r\n");
 
-            String mes = getString(sock, message);
+            message.append("Get").append("::").append(queueName).append("\r\n");
 
-            if(mes.compareTo("ERROR") != 0){   //顺利订阅，执行处理函数
-                handler.setMessage(mes);
-                new Thread(handler).start();
+            String mes = this.getString(sock, writer, message);
+            if(mes.compareTo("ERROR") != 0){
+                return mes;
             }
             else {
-                System.out.println("Server Error.");
+                System.out.println("Server error.");
+                return null;
             }
         } catch (IOException e) {
             e.printStackTrace();
-            System.out.println("Connect Error.");
+            System.out.println("Connect error.");
         }
+        return null;
     }
 
     private void declare(String func, String queueName, List<String> keys) {     //消息订阅
         try (Socket sock = new Socket(this.IP,this.port);){
 
+            OutputStream output = sock.getOutputStream();
+            var writer = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8));
             StringBuilder message = new StringBuilder();
+
             message.append("Declare").append("::").append(func).append("::").append(queueName).append("::");
             if (keys != null && keys.size() > 0){
                 for (int i = 0; i < keys.size(); i++){
@@ -103,7 +110,7 @@ public class EndPoint {
             }
             message.append("\r\n");
 
-            String mes = getString(sock, message);
+            String mes = getString(sock, writer, message);
             if(mes.compareTo("ERROR") == 0) {
                 System.out.println("Server Error.");
             }
